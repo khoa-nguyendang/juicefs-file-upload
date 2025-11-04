@@ -1,0 +1,155 @@
+# Default values for juicefs-ui
+
+replicaCount: 1
+
+image:
+  repository: naturemyloves/file-browser-ui
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 3000
+  targetPort: 3000
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations:
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+    # nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+  hosts:
+    - host: juicefs.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: juicefs-ui-tls
+  #    hosts:
+  #      - juicefs.local
+
+resources:
+  limits:
+    cpu: 300m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Environment variables for the UI
+# These will be passed as runtime config to Next.js
+env:
+  # API Configuration
+  NEXT_PUBLIC_API_URL: "http://juicefs-server:8080/api"
+  NEXT_PUBLIC_API_TIMEOUT: "30000"
+
+  # App Configuration
+  NEXT_PUBLIC_APP_NAME: "JuiceFS File Browser"
+  NEXT_PUBLIC_MAX_UPLOAD_SIZE: "104857600"  # 100MB in bytes
+  NEXT_PUBLIC_DEFAULT_VIEW: "tree"
+  NEXT_PUBLIC_ENABLE_DELETE: "true"
+  NEXT_PUBLIC_ENABLE_UPLOAD: "true"
+
+  # MinIO Configuration (for display purposes)
+  NEXT_PUBLIC_MINIO_CONSOLE_URL: "http://minio:9001"
+
+# Additional environment variables from existing ConfigMap or Secret
+envFrom: []
+  # - configMapRef:
+  #     name: ui-config
+  # - secretRef:
+  #     name: ui-secret
+
+# Health checks
+livenessProbe:
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+  successThreshold: 1
+
+readinessProbe:
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+  successThreshold: 1
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  # maxUnavailable: 1
+
+# Network Policy
+networkPolicy:
+  enabled: false
+  ingress:
+    - from:
+      - namespaceSelector: {}
+  egress:
+    - to:
+      - podSelector:
+          matchLabels:
+            app: juicefs-server
+      ports:
+      - protocol: TCP
+        port: 8080
+
+# ConfigMap for runtime configuration
+config:
+  enabled: true
+  # Additional runtime configuration that can be mounted as a file
+  # This is useful for complex configurations
+  data: |
+    window.ENV = {
+      API_URL: '${NEXT_PUBLIC_API_URL}',
+      APP_NAME: '${NEXT_PUBLIC_APP_NAME}',
+      MAX_UPLOAD_SIZE: ${NEXT_PUBLIC_MAX_UPLOAD_SIZE},
+      DEFAULT_VIEW: '${NEXT_PUBLIC_DEFAULT_VIEW}',
+      ENABLE_DELETE: ${NEXT_PUBLIC_ENABLE_DELETE},
+      ENABLE_UPLOAD: ${NEXT_PUBLIC_ENABLE_UPLOAD}
+    };

@@ -1,0 +1,18 @@
+apiVersion: v2
+name: juicefs-ui
+description: A Helm chart for JuiceFS File Browser UI
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - ui
+  - frontend
+  - react
+  - nextjs
+  - file-browser
+maintainers:
+  - name: khoa-nguyendang
+    email: your-email@example.com
+home: https://github.com/khoa-nguyendang/juicefs-file-upload
+sources:
+  - https://github.com/khoa-nguyendang/juicefs-file-upload

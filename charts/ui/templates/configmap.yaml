@@ -1,0 +1,11 @@
+{{- if .Values.config.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "juicefs-ui.fullname" . }}-config
+  labels:
+    {{- include "juicefs-ui.labels" . | nindent 4 }}
+data:
+  runtime-config.js: |
+{{ .Values.config.data | indent 4 }}
+{{- end }}

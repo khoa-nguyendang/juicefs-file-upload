@@ -1,0 +1,138 @@
+# Default values for juicefs-server
+
+name: juicefs-server
+replicaCount: 1
+
+image:
+  repository: naturemyloves/file-browser-server
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations:
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+    # nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    # nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    # nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+  hosts:
+    - host: api.juicefs.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: api-juicefs-tls
+  #    hosts:
+  #      - api.juicefs.local
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Environment variables for the server
+env:
+  SERVER_PORT: "8080"
+  # MinIO Configuration - These should be configured to match your MinIO installation
+  MINIO_ENDPOINT: "minio:9000"
+  MINIO_ACCESS_KEY: "juicefs"
+  MINIO_SECRET_KEY: "juicefs123"
+  MINIO_USE_SSL: "false"
+  MINIO_BUCKET: "juicefs"
+
+# Additional environment variables from existing ConfigMap or Secret
+envFrom: []
+  # - configMapRef:
+  #     name: minio-config
+  # - secretRef:
+  #     name: minio-secret
+
+# Health checks
+livenessProbe:
+  httpGet:
+    path: /api/health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+  successThreshold: 1
+
+readinessProbe:
+  httpGet:
+    path: /api/health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+  successThreshold: 1
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  # maxUnavailable: 1
+
+# Network Policy
+networkPolicy:
+  enabled: false
+  ingress:
+    - from:
+      - podSelector:
+          matchLabels:
+            app: juicefs-ui
+  egress:
+    - to:
+      - podSelector:
+          matchLabels:
+            app: minio
+      ports:
+      - protocol: TCP
+        port: 9000

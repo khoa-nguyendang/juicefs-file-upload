@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "juicefs-ui.fullname" . }}
+  labels:
+    {{- include "juicefs-ui.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "juicefs-ui.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "juicefs-ui.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "juicefs-ui.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: {{ .Values.env.NEXT_PUBLIC_API_URL | quote }}
+            - name: NEXT_PUBLIC_API_TIMEOUT
+              value: {{ .Values.env.NEXT_PUBLIC_API_TIMEOUT | quote }}
+            - name: NEXT_PUBLIC_APP_NAME
+              value: {{ .Values.env.NEXT_PUBLIC_APP_NAME | quote }}
+            - name: NEXT_PUBLIC_MAX_UPLOAD_SIZE
+              value: {{ .Values.env.NEXT_PUBLIC_MAX_UPLOAD_SIZE | quote }}
+            - name: NEXT_PUBLIC_DEFAULT_VIEW
+              value: {{ .Values.env.NEXT_PUBLIC_DEFAULT_VIEW | quote }}
+            - name: NEXT_PUBLIC_ENABLE_DELETE
+              value: {{ .Values.env.NEXT_PUBLIC_ENABLE_DELETE | quote }}
+            - name: NEXT_PUBLIC_ENABLE_UPLOAD
+              value: {{ .Values.env.NEXT_PUBLIC_ENABLE_UPLOAD | quote }}
+            - name: NEXT_PUBLIC_MINIO_CONSOLE_URL
+              value: {{ .Values.env.NEXT_PUBLIC_MINIO_CONSOLE_URL | quote }}
+          {{- with .Values.envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.config.enabled }}
+          volumeMounts:
+            - name: runtime-config
+              mountPath: /app/public/config
+          {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- if .Values.config.enabled }}
+      volumes:
+        - name: runtime-config
+          configMap:
+            name: {{ include "juicefs-ui.fullname" . }}-config
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
