@@ -1,0 +1,55 @@
+# Display Sharing Service with JuiceFS POSIX Mount
+
+name: display-sharing
+replicaCount: 1
+
+image:
+  repository: naturemyloves/display-sharing
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8090
+  targetPort: 8090
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+  requests:
+    cpu: 200m
+    memory: 512Mi
+
+# JuiceFS Configuration
+juicefs:
+  name: myfs
+  # Metadata engine (redis://host:port/db or postgres://user:pass@host:port/db)
+  meta: "redis://redis:6379/1"
+  # Storage type (minio, s3, oss, etc)
+  storage: "minio"
+  # Bucket URL
+  bucket: "http://minio:9000/juicefs"
+  # Access credentials
+  accessKey: "juicefs"
+  secretKey: "juicefs123"
+  # Mount options
+  mountOptions: "--cache-size=1024 --cache-dir=/cache"
+
+# Application environment
+env:
+  PORT: "8090"
+
+# Security context for FUSE mount
+securityContext:
+  privileged: true  # Required for FUSE
+  capabilities:
+    add:
+      - SYS_ADMIN  # Required for mount
+
+# Volume for JuiceFS cache
+volumes:
+  - name: juicefs-cache
+    emptyDir: {}
+  - name: app-binary
+    emptyDir: {}

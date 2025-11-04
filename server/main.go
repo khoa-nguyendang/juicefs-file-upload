@@ -37,6 +37,7 @@ type UploadResponse struct {
 }
 
 var minioClient *minio.Client
+var coreClient *minio.Core
 var bucketName = "juicefs"
 
 func initMinIO() error {
@@ -64,6 +65,15 @@ func initMinIO() error {
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create MinIO client: %w", err)
+	}
+
+	// Create Core client for multipart operations
+	coreClient, err = minio.NewCore(endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(accessKeyID, secretAccessKey, ""),
+		Secure: useSSL,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create MinIO Core client: %w", err)
 	}
 
 	// Check if bucket exists, create if not
@@ -552,6 +562,15 @@ func main() {
 	http.HandleFunc("/api/delete/", corsMiddleware(deleteHandler))
 	http.HandleFunc("/api/health", corsMiddleware(healthHandler))
 	http.HandleFunc("/api/stats", corsMiddleware(statsHandler))
+
+	// Multipart upload endpoints for large files
+	http.HandleFunc("/api/multipart/initiate", corsMiddleware(initiateMultipartHandler))
+	http.HandleFunc("/api/multipart/upload-chunk", corsMiddleware(uploadChunkHandler))
+	http.HandleFunc("/api/multipart/abort", corsMiddleware(abortMultipartHandler))
+	http.HandleFunc("/api/presigned-url", corsMiddleware(getPresignedUploadURLHandler))
+
+	// Start cleanup goroutine for expired sessions
+	go cleanupOldSessions()
 
 	// Get port from environment or use default
 	port := os.Getenv("SERVER_PORT")

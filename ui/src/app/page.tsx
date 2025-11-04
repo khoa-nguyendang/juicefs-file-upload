@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import FileBrowser from '@/components/FileBrowser';
 import FileUpload from '@/components/FileUpload';
-import TreeView from '@/components/TreeView';
 import StorageStats from '@/components/StorageStats';
-import { config, buildApiUrl } from '@/lib/config';
-import { Squares2X2Icon, ListBulletIcon } from '@heroicons/react/24/outline';
+import TreeView from '@/components/TreeView';
+import { buildApiUrl, config } from '@/lib/config';
+import { ListBulletIcon, Squares2X2Icon } from '@heroicons/react/24/outline';
+import { useEffect, useState } from 'react';
 
 interface FileItem {
   name: string;
@@ -177,7 +177,7 @@ export default function Home() {
               API Health →
             </a>
             <span>•</span>
-            <span>Max Upload: {Math.round(config.app.maxUploadSize / 1024 / 1024)} MB</span>
+            <span>Max Upload: {Math.round(config.app.maxUploadSize / 1024 / 1024)} GB</span>
           </div>
         </footer>
       </div>

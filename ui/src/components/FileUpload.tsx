@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { buildApiUrl } from '@/lib/config';
 import {
   CloudArrowUpIcon,
-  FolderIcon,
   DocumentIcon,
+  FolderIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
-import { config, buildApiUrl } from '@/lib/config';
+import { useCallback, useRef, useState } from 'react';
 
 interface FileUploadProps {
   currentPath: string;
@@ -209,8 +209,8 @@ export default function FileUpload({ currentPath, onUploadComplete }: FileUpload
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
-        <CloudArrowUpIcon className="mx-auto h-12 w-12 text-gray-400" />
-        <p className="mt-2 text-sm text-gray-600">
+        <CloudArrowUpIcon className="mx-auto h-12 w-12 " />
+        <p className="mt-2 text-sm ">
           Drag and drop files here, or use the buttons below
         </p>
         <p className="mt-1 text-xs text-gray-500">
@@ -219,7 +219,7 @@ export default function FileUpload({ currentPath, onUploadComplete }: FileUpload
 
         {/* Conflict Resolution Options */}
         <div className="mt-3 flex justify-center items-center gap-4">
-          <label className="text-xs text-gray-600">If file exists:</label>
+          <label className="text-xs ">If file exists:</label>
           <div className="flex gap-2">
             <label className="flex items-center text-xs">
               <input
@@ -308,20 +308,20 @@ export default function FileUpload({ currentPath, onUploadComplete }: FileUpload
                     {uploadFile.file.type.includes('folder') || uploadFile.file.webkitRelativePath ? (
                       <FolderIcon className="h-5 w-5 text-blue-600 mt-0.5" />
                     ) : (
-                      <DocumentIcon className="h-5 w-5 text-gray-400 mt-0.5" />
+                      <DocumentIcon className="h-5 w-5  mt-0.5" />
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
+                      <p className="text-sm font-medium truncate">
                         {uploadFile.file.webkitRelativePath || uploadFile.file.name}
                       </p>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs">
                         {formatFileSize(uploadFile.file.size)}
                       </p>
 
                       {/* Progress Bar */}
                       {uploadFile.status === 'uploading' && (
                         <div className="mt-2">
-                          <div className="flex justify-between text-xs text-gray-600 mb-1">
+                          <div className="flex justify-between text-xs  mb-1">
                             <span>Uploading...</span>
                             <span>{uploadFile.progress}%</span>
                           </div>
@@ -351,7 +351,7 @@ export default function FileUpload({ currentPath, onUploadComplete }: FileUpload
                   {(uploadFile.status === 'pending' || uploadFile.status === 'error' || uploadFile.status === 'complete') && (
                     <button
                       onClick={() => removeFromQueue(uploadFile.file)}
-                      className="ml-2 p-1 text-gray-400 hover:text-gray-600"
+                      className="ml-2 p-1  hover:"
                     >
                       <XMarkIcon className="h-4 w-4" />
                     </button>

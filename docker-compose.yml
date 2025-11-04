@@ -1,6 +1,18 @@
 version: '3.8'
 
 services:
+  # Redis for JuiceFS metadata
+  redis:
+    image: redis:7-alpine
+    container_name: juicefs-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - juicefs-net
+
   # MinIO for object storage
   minio:
     image: minio/minio:latest
@@ -42,7 +54,36 @@ services:
     networks:
       - juicefs-net
 
-  # Go application for file upload/download
+  # Display Sharing Service with JuiceFS POSIX mount
+  display-sharing:
+    build:
+      context: ./display-sharing
+      dockerfile: Dockerfile
+    container_name: juicefs-display-sharing
+    ports:
+      - "8090:8090"
+    depends_on:
+      - redis
+      - minio
+      - minio-init
+    environment:
+      - PORT=8090
+      # JuiceFS configuration
+      - JUICEFS_NAME=myfs
+      - JUICEFS_META=redis://redis:6379/1
+      - JUICEFS_STORAGE=minio
+      - JUICEFS_BUCKET=http://minio:9000/juicefs
+      - JUICEFS_ACCESS_KEY=juicefs
+      - JUICEFS_SECRET_KEY=juicefs123
+    privileged: true  # Required for FUSE mount
+    cap_add:
+      - SYS_ADMIN  # Required for mount operations
+    devices:
+      - /dev/fuse  # Required for FUSE filesystem
+    networks:
+      - juicefs-net
+
+  # Go application for file upload/download (Direct S3 API)
   go-app:
     build:
       context: ./server
@@ -74,11 +115,14 @@ services:
       - "3000:3000"
     depends_on:
       - go-app
+      - display-sharing
     environment:
       - NODE_ENV=production
       # API Configuration
       - NEXT_PUBLIC_API_URL=http://go-app:8080
       - NEXT_PUBLIC_API_TIMEOUT=30000
+      # Display Sharing API (JuiceFS POSIX)
+      - NEXT_PUBLIC_DISPLAY_API_URL=http://display-sharing:8090
       # MinIO Configuration
       - NEXT_PUBLIC_MINIO_URL=http://minio:9000
       - NEXT_PUBLIC_MINIO_CONSOLE_URL=http://localhost:9001
@@ -99,5 +143,7 @@ networks:
     driver: bridge
 
 volumes:
+  redis_data:
+    driver: local
   minio_data:
     driver: local
