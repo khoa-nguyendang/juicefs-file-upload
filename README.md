@@ -19,12 +19,13 @@ A modern web-based file browser application that provides a user-friendly interf
 ## Architecture
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   React UI  │────▶│  Go Server  │────▶│    MinIO    │
-│  (Next.js)  │     │    (API)    │     │  (Storage)  │
-└─────────────┘     └─────────────┘     └─────────────┘
-     :3000              :8080               :9000
+
+   React UI  -->  Go Server  -->    MinIO    
+  (Next.js)        (API)          (Storage)  
+    :3000           :8080              :9000
 ```
+
+![Sequence Diagram](./sequence-diagram.png "Processing flow")
 
 ## Quick Start
 
@@ -88,9 +89,14 @@ docker build -t naturemyloves/file-browser-server:latest ./server
 # Build UI image
 docker build -t naturemyloves/file-browser-ui:latest ./ui
 
+# Build Display sharing image
+docker build -t naturemyloves/displaying-sharing:latest ./display-sharing
+
+
 # Push to registry
 docker push naturemyloves/file-browser-server:latest
 docker push naturemyloves/file-browser-ui:latest
+docker push naturemyloves/displaying-sharing:latest
 ```
 
 ## Environment Variables

@@ -1,4 +1,4 @@
-.PHONY: build up down
+.PHONY: build up down build-and-push
 
 # Variables
 DOCKER_COMPOSE = docker-compose
@@ -27,3 +27,11 @@ down: ## Stop all services
 	@echo "${YELLOW}Stopping all services...${NC}"
 	@$(DOCKER_COMPOSE) down
 	@echo "${GREEN}Services stopped${NC}"
+
+build-and-push: ## Build all and push images
+	@docker build -t naturemyloves/file-browser-server:latest ./server
+	@docker build -t naturemyloves/file-browser-ui:latest ./ui
+	@docker build -t naturemyloves/displaying-sharing:latest ./display-sharing
+	@docker push naturemyloves/file-browser-server:latest
+	@docker push naturemyloves/file-browser-ui:latest
+	@docker push naturemyloves/displaying-sharing:latest
