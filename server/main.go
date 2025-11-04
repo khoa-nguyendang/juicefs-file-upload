@@ -1,0 +1,422 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"path"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
+)
+
+type FileInfo struct {
+	Name     string    `json:"name"`
+	Path     string    `json:"path"`
+	IsDir    bool      `json:"is_dir"`
+	Size     int64     `json:"size"`
+	Modified time.Time `json:"modified"`
+}
+
+type UploadResponse struct {
+	Success bool   `json:"success"`
+	Path    string `json:"path"`
+	Message string `json:"message,omitempty"`
+}
+
+var minioClient *minio.Client
+var bucketName = "juicefs"
+
+func initMinIO() error {
+	endpoint := os.Getenv("MINIO_ENDPOINT")
+	if endpoint == "" {
+		endpoint = "minio:9000"
+	}
+
+	accessKeyID := os.Getenv("MINIO_ACCESS_KEY")
+	if accessKeyID == "" {
+		accessKeyID = "juicefs"
+	}
+
+	secretAccessKey := os.Getenv("MINIO_SECRET_KEY")
+	if secretAccessKey == "" {
+		secretAccessKey = "juicefs123"
+	}
+
+	useSSL := os.Getenv("MINIO_USE_SSL") == "true"
+
+	var err error
+	minioClient, err = minio.New(endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(accessKeyID, secretAccessKey, ""),
+		Secure: useSSL,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create MinIO client: %w", err)
+	}
+
+	// Check if bucket exists, create if not
+	ctx := context.Background()
+	exists, err := minioClient.BucketExists(ctx, bucketName)
+	if err != nil {
+		return fmt.Errorf("failed to check bucket existence: %w", err)
+	}
+
+	if !exists {
+		err = minioClient.MakeBucket(ctx, bucketName, minio.MakeBucketOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to create bucket: %w", err)
+		}
+		log.Printf("Created bucket: %s", bucketName)
+	}
+
+	log.Printf("MinIO client initialized successfully. Endpoint: %s, Bucket: %s", endpoint, bucketName)
+	return nil
+}
+
+func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Allow requests from the UI container
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Max-Age", "3600")
+
+		// Handle preflight requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	}
+}
+
+func uploadHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse multipart form
+	err := r.ParseMultipartForm(10 << 20) // 10 MB
+	if err != nil {
+		log.Printf("Failed to parse form: %v", err)
+		http.Error(w, "Failed to parse form", http.StatusBadRequest)
+		return
+	}
+
+	file, handler, err := r.FormFile("file")
+	if err != nil {
+		log.Printf("Failed to get file from form: %v", err)
+		http.Error(w, "Failed to get file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	// Get the upload path from form
+	uploadPath := r.FormValue("path")
+	if uploadPath == "" {
+		uploadPath = "/"
+	}
+
+	// Clean and prepare the object key
+	// If uploadPath is /, don't add it as prefix
+	var objectKey string
+	if uploadPath == "/" || uploadPath == "" {
+		objectKey = handler.Filename
+	} else {
+		// Clean the path and ensure it doesn't start with /
+		uploadPath = strings.TrimPrefix(filepath.Clean(uploadPath), "/")
+		objectKey = path.Join(uploadPath, handler.Filename)
+	}
+
+	// Ensure the object key doesn't start with /
+	objectKey = strings.TrimPrefix(objectKey, "/")
+
+	log.Printf("Uploading file to MinIO - Key: %s, Size: %d bytes", objectKey, handler.Size)
+
+	// Upload to MinIO
+	ctx := context.Background()
+	_, err = minioClient.PutObject(ctx, bucketName, objectKey, file, handler.Size, minio.PutObjectOptions{
+		ContentType: handler.Header.Get("Content-Type"),
+	})
+	if err != nil {
+		log.Printf("Failed to upload to MinIO: %v", err)
+		http.Error(w, "Failed to upload file", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Successfully uploaded file to MinIO: %s", objectKey)
+
+	// Return success response
+	response := UploadResponse{
+		Success: true,
+		Path:    "/" + objectKey,
+		Message: "File uploaded successfully",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func listHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get the path parameter
+	requestPath := r.URL.Query().Get("path")
+	if requestPath == "" {
+		requestPath = "/"
+	}
+
+	// Clean the path
+	requestPath = filepath.Clean(requestPath)
+
+	// Remove leading slash for MinIO prefix (MinIO doesn't use leading /)
+	prefix := strings.TrimPrefix(requestPath, "/")
+	if prefix != "" && !strings.HasSuffix(prefix, "/") {
+		prefix = prefix + "/"
+	}
+
+	log.Printf("Listing objects in MinIO - Prefix: '%s'", prefix)
+
+	ctx := context.Background()
+	objectCh := minioClient.ListObjects(ctx, bucketName, minio.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: false, // Don't recurse, we want directory-like listing
+	})
+
+	// Use a map to track directories we've already added
+	dirMap := make(map[string]bool)
+	var files []FileInfo
+
+	for object := range objectCh {
+		if object.Err != nil {
+			log.Printf("Error listing object: %v", object.Err)
+			continue
+		}
+
+		// Get the relative path from the prefix
+		relativePath := strings.TrimPrefix(object.Key, prefix)
+		if relativePath == "" {
+			continue // Skip the prefix itself
+		}
+
+		// Check if this is a directory (contains more path segments)
+		parts := strings.Split(relativePath, "/")
+
+		if len(parts) > 1 {
+			// This is a nested item, represent it as a directory
+			dirName := parts[0]
+			if !dirMap[dirName] {
+				dirMap[dirName] = true
+				fullPath := "/" + prefix + dirName
+				if prefix == "" {
+					fullPath = "/" + dirName
+				}
+				files = append(files, FileInfo{
+					Name:     dirName,
+					Path:     fullPath,
+					IsDir:    true,
+					Size:     0,
+					Modified: object.LastModified,
+				})
+			}
+		} else {
+			// This is a file in the current directory
+			fullPath := "/" + object.Key
+			files = append(files, FileInfo{
+				Name:     parts[0],
+				Path:     fullPath,
+				IsDir:    false,
+				Size:     object.Size,
+				Modified: object.LastModified,
+			})
+		}
+	}
+
+	// Also check for objects that end with / (explicit directories)
+	if prefix == "" {
+		// For root, also check for any top-level prefixes
+		objectCh := minioClient.ListObjects(ctx, bucketName, minio.ListObjectsOptions{
+			Recursive: true,
+		})
+
+		topLevelDirs := make(map[string]bool)
+		for object := range objectCh {
+			if object.Err != nil {
+				continue
+			}
+			parts := strings.Split(object.Key, "/")
+			if len(parts) > 1 && parts[0] != "" {
+				topLevelDirs[parts[0]] = true
+			}
+		}
+
+		// Add any directories not already in our list
+		for dir := range topLevelDirs {
+			if !dirMap[dir] {
+				files = append(files, FileInfo{
+					Name:     dir,
+					Path:     "/" + dir,
+					IsDir:    true,
+					Size:     0,
+					Modified: time.Now(),
+				})
+			}
+		}
+	}
+
+	log.Printf("Found %d items in path: %s", len(files), requestPath)
+
+	// Return the file list as JSON
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(files); err != nil {
+		log.Printf("Failed to encode response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
+func downloadHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get the file path from URL
+	filePath := strings.TrimPrefix(r.URL.Path, "/api/download/")
+	if filePath == "" {
+		http.Error(w, "File path required", http.StatusBadRequest)
+		return
+	}
+
+	// Clean the path and remove leading slash
+	objectKey := strings.TrimPrefix(filepath.Clean(filePath), "/")
+
+	log.Printf("Downloading file from MinIO: %s", objectKey)
+
+	ctx := context.Background()
+	object, err := minioClient.GetObject(ctx, bucketName, objectKey, minio.GetObjectOptions{})
+	if err != nil {
+		log.Printf("Failed to get object from MinIO: %v", err)
+		http.Error(w, "File not found", http.StatusNotFound)
+		return
+	}
+	defer object.Close()
+
+	// Get object info for headers
+	stat, err := object.Stat()
+	if err != nil {
+		log.Printf("Failed to get object stats: %v", err)
+		http.Error(w, "Failed to get file info", http.StatusInternalServerError)
+		return
+	}
+
+	// Set headers for download
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", path.Base(objectKey)))
+	w.Header().Set("Content-Type", stat.ContentType)
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", stat.Size))
+
+	// Stream the file to the response
+	written, err := io.Copy(w, object)
+	if err != nil {
+		log.Printf("Failed to stream file: %v", err)
+		return
+	}
+
+	log.Printf("Successfully streamed %d bytes for file: %s", written, objectKey)
+}
+
+func deleteHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get the file path from URL
+	filePath := strings.TrimPrefix(r.URL.Path, "/api/delete/")
+	if filePath == "" {
+		http.Error(w, "File path required", http.StatusBadRequest)
+		return
+	}
+
+	// Clean the path and remove leading slash
+	objectKey := strings.TrimPrefix(filepath.Clean(filePath), "/")
+
+	log.Printf("Deleting file from MinIO: %s", objectKey)
+
+	ctx := context.Background()
+	err := minioClient.RemoveObject(ctx, bucketName, objectKey, minio.RemoveObjectOptions{})
+	if err != nil {
+		log.Printf("Failed to delete object from MinIO: %v", err)
+		http.Error(w, "Failed to delete file", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Successfully deleted file from MinIO: %s", objectKey)
+
+	// Return success response
+	response := map[string]interface{}{
+		"success": true,
+		"message": "File deleted successfully",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	// Check MinIO connectivity
+	ctx := context.Background()
+	_, err := minioClient.ListBuckets(ctx)
+
+	status := map[string]interface{}{
+		"status": "healthy",
+		"minio":  "connected",
+	}
+
+	if err != nil {
+		status["status"] = "unhealthy"
+		status["minio"] = fmt.Sprintf("error: %v", err)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
+}
+
+func main() {
+	// Initialize MinIO client
+	if err := initMinIO(); err != nil {
+		log.Fatalf("Failed to initialize MinIO: %v", err)
+	}
+
+	// Set up routes with CORS
+	http.HandleFunc("/api/upload", corsMiddleware(uploadHandler))
+	http.HandleFunc("/api/list", corsMiddleware(listHandler))
+	http.HandleFunc("/api/download/", corsMiddleware(downloadHandler))
+	http.HandleFunc("/api/delete/", corsMiddleware(deleteHandler))
+	http.HandleFunc("/api/health", corsMiddleware(healthHandler))
+
+	// Get port from environment or use default
+	port := os.Getenv("SERVER_PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	log.Printf("Server starting on port %s...", port)
+	log.Printf("MinIO endpoint: %s", os.Getenv("MINIO_ENDPOINT"))
+
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		log.Fatalf("Server failed to start: %v", err)
+	}
+}
