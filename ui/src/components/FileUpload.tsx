@@ -200,17 +200,19 @@ export default function FileUpload({ currentPath, onUploadComplete }: FileUpload
     <div className="mb-6">
       {/* Upload Area */}
       <div
-        className={`border-2 border-dashed rounded-lg p-8 text-center transition-all cursor-pointer
+        className={`border-2 border-dashed rounded-lg p-8 text-center transition-all
           ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'}`}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
       >
         <CloudArrowUpIcon className="mx-auto h-12 w-12 text-gray-400" />
         <p className="mt-2 text-sm text-gray-600">
-          Drag and drop files here, or click to select
+          Drag and drop files here, or use the buttons below
+        </p>
+        <p className="mt-1 text-xs text-gray-500">
+          Folder upload preserves directory structure
         </p>
         <div className="mt-4 flex justify-center gap-4">
           <button

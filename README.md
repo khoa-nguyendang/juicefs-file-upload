@@ -75,49 +75,20 @@ While JuiceFS is excellent for distributed file systems, we chose direct MinIO i
 | GET | `/api/download/{filename}` | Download file |
 | DELETE | `/api/delete/{filename}` | Delete file |
 
-## Testing
 
-### Test File Upload
-
-```bash
-# Upload a single file
-curl -X POST -F "file=@test.txt" -F "path=/documents" \
-  http://localhost:8080/api/upload
-
-# List files
-curl http://localhost:8080/api/list?path=/
-
-# Download file
-curl -O http://localhost:8080/api/download/test.txt
-```
-
-### Test Folder Upload
-
-Use the provided test HTML file:
-
-```bash
-open test-folder-upload.html
-# Select a folder and upload with structure preservation
-```
-
-## Production Deployment
-
-### Kubernetes Deployment
-
-See [KUBERNETES_DEPLOYMENT.md](KUBERNETES_DEPLOYMENT.md) for detailed Kubernetes deployment instructions.
 
 ### Building Images
 
 ```bash
 # Build server image
-docker build -t your-registry/file-browser-server:latest ./server
+docker build -t naturemyloves/file-browser-server:latest ./server
 
 # Build UI image
-docker build -t your-registry/file-browser-ui:latest ./ui
+docker build -t naturemyloves/file-browser-ui:latest ./ui
 
 # Push to registry
-docker push your-registry/file-browser-server:latest
-docker push your-registry/file-browser-ui:latest
+docker push naturemyloves/file-browser-server:latest
+docker push naturemyloves/file-browser-ui:latest
 ```
 
 ## Environment Variables
