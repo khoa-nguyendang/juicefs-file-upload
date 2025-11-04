@@ -163,6 +163,26 @@ export default function TreeView({ onFileSelect, onRefresh }: TreeViewProps) {
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
   };
 
+  const formatDate = (dateString: string): string => {
+    try {
+      const date = new Date(dateString);
+      // Check if date is valid
+      if (isNaN(date.getTime())) {
+        return '';
+      }
+      // Format as locale string with shorter format
+      return date.toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return '';
+    }
+  };
+
   const renderNode = (node: TreeNode, level: number = 0) => {
     const isLoading = loading[node.path];
     const isSelected = selectedNode === node.path;
@@ -214,6 +234,13 @@ export default function TreeView({ onFileSelect, onRefresh }: TreeViewProps) {
           <span className="flex-1 text-sm truncate" title={node.name}>
             {node.name}
           </span>
+
+          {/* Last Modified Date */}
+          {node.modified && (
+            <span className="text-xs text-gray-400 mr-3">
+              {formatDate(node.modified)}
+            </span>
+          )}
 
           {/* File Size */}
           {!node.is_dir && (

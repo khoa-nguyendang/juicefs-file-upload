@@ -25,6 +25,7 @@ export default function FileUpload({ currentPath, onUploadComplete }: FileUpload
   const [isDragging, setIsDragging] = useState(false);
   const [uploadQueue, setUploadQueue] = useState<UploadFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [conflictAction, setConflictAction] = useState<'rename' | 'replace'>('rename');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
@@ -125,6 +126,7 @@ export default function FileUpload({ currentPath, onUploadComplete }: FileUpload
     return new Promise((resolve, reject) => {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('conflictAction', conflictAction);
 
       // If file has webkitRelativePath (from folder upload), preserve the directory structure
       if (file.webkitRelativePath) {
@@ -214,6 +216,36 @@ export default function FileUpload({ currentPath, onUploadComplete }: FileUpload
         <p className="mt-1 text-xs text-gray-500">
           Folder upload preserves directory structure
         </p>
+
+        {/* Conflict Resolution Options */}
+        <div className="mt-3 flex justify-center items-center gap-4">
+          <label className="text-xs text-gray-600">If file exists:</label>
+          <div className="flex gap-2">
+            <label className="flex items-center text-xs">
+              <input
+                type="radio"
+                name="conflictAction"
+                value="rename"
+                checked={conflictAction === 'rename'}
+                onChange={() => setConflictAction('rename')}
+                className="mr-1"
+              />
+              Rename with UUID
+            </label>
+            <label className="flex items-center text-xs">
+              <input
+                type="radio"
+                name="conflictAction"
+                value="replace"
+                checked={conflictAction === 'replace'}
+                onChange={() => setConflictAction('replace')}
+                className="mr-1"
+              />
+              Replace existing
+            </label>
+          </div>
+        </div>
+
         <div className="mt-4 flex justify-center gap-4">
           <button
             onClick={(e) => {

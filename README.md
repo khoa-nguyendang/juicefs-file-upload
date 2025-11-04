@@ -11,6 +11,8 @@ A modern web-based file browser application that provides a user-friendly interf
 - **Progress Tracking**: Real-time upload progress with visual feedback
 - **File Operations**: Download and delete files directly from the UI
 - **Folder Structure Preservation**: Maintains original folder hierarchy during uploads
+- **Duplicate File Handling**: Choose to rename with UUID or replace existing files
+- **Last Modified Display**: Shows modification date/time for all files and folders
 - **S3-Compatible**: Uses MinIO for reliable, scalable object storage
 - **Kubernetes Ready**: Designed for containerized deployments
 
@@ -71,7 +73,7 @@ While JuiceFS is excellent for distributed file systems, we chose direct MinIO i
 |--------|----------|-------------|
 | GET | `/api/health` | Health check |
 | GET | `/api/list?path=/` | List files in directory |
-| POST | `/api/upload` | Upload file with optional path |
+| POST | `/api/upload` | Upload file with optional path and conflictAction (rename/replace) |
 | GET | `/api/download/{filename}` | Download file |
 | DELETE | `/api/delete/{filename}` | Delete file |
 

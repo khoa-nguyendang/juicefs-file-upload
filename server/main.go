@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
@@ -26,9 +27,13 @@ type FileInfo struct {
 }
 
 type UploadResponse struct {
-	Success bool   `json:"success"`
-	Path    string `json:"path"`
-	Message string `json:"message,omitempty"`
+	Success        bool   `json:"success"`
+	Path           string `json:"path"`
+	Message        string `json:"message,omitempty"`
+	FileExists     bool   `json:"file_exists,omitempty"`
+	OriginalName   string `json:"original_name,omitempty"`
+	RenamedTo      string `json:"renamed_to,omitempty"`
+	ConflictAction string `json:"conflict_action,omitempty"`
 }
 
 var minioClient *minio.Client
@@ -80,6 +85,32 @@ func initMinIO() error {
 	return nil
 }
 
+// checkFileExists checks if an object exists in MinIO
+func checkFileExists(objectKey string) bool {
+	ctx := context.Background()
+	_, err := minioClient.StatObject(ctx, bucketName, objectKey, minio.StatObjectOptions{})
+	return err == nil
+}
+
+// generateUniqueFilename generates a unique filename by adding a UUID or timestamp
+func generateUniqueFilename(originalPath string) string {
+	dir := filepath.Dir(originalPath)
+	filename := filepath.Base(originalPath)
+	ext := filepath.Ext(filename)
+	nameWithoutExt := strings.TrimSuffix(filename, ext)
+
+	// Generate a short UUID (first 8 characters)
+	shortUUID := uuid.New().String()[:8]
+
+	// Create new filename with UUID
+	newFilename := fmt.Sprintf("%s_%s%s", nameWithoutExt, shortUUID, ext)
+
+	if dir == "." || dir == "/" {
+		return newFilename
+	}
+	return path.Join(dir, newFilename)
+}
+
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Allow requests from the UI container
@@ -126,6 +157,13 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		uploadPath = "/"
 	}
 
+	// Get conflict resolution strategy (replace or rename)
+	// Default to "rename" for safety
+	conflictAction := r.FormValue("conflictAction")
+	if conflictAction == "" {
+		conflictAction = "rename" // Default behavior
+	}
+
 	// Clean and prepare the object key
 	// If uploadPath is /, don't add it as prefix
 	var objectKey string
@@ -139,6 +177,25 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Ensure the object key doesn't start with /
 	objectKey = strings.TrimPrefix(objectKey, "/")
+	originalKey := objectKey
+
+	// Check if file exists and handle conflict
+	fileExists := checkFileExists(objectKey)
+	var conflictHandled string
+
+	if fileExists {
+		if conflictAction == "replace" {
+			// User chose to replace - proceed with upload
+			log.Printf("File exists, replacing: %s", objectKey)
+			conflictHandled = "replaced"
+		} else {
+			// User chose to rename or default behavior
+			newObjectKey := generateUniqueFilename(objectKey)
+			log.Printf("File exists, renaming from %s to %s", objectKey, newObjectKey)
+			objectKey = newObjectKey
+			conflictHandled = "renamed"
+		}
+	}
 
 	log.Printf("Uploading file to MinIO - Key: %s, Size: %d bytes", objectKey, handler.Size)
 
@@ -155,11 +212,23 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Successfully uploaded file to MinIO: %s", objectKey)
 
-	// Return success response
+	// Return success response with conflict resolution info
 	response := UploadResponse{
-		Success: true,
-		Path:    "/" + objectKey,
-		Message: "File uploaded successfully",
+		Success:    true,
+		Path:       "/" + objectKey,
+		Message:    "File uploaded successfully",
+		FileExists: fileExists,
+	}
+
+	if fileExists {
+		response.OriginalName = filepath.Base(originalKey)
+		response.ConflictAction = conflictHandled
+		if conflictHandled == "renamed" {
+			response.RenamedTo = filepath.Base(objectKey)
+			response.Message = fmt.Sprintf("File renamed to %s (original already exists)", filepath.Base(objectKey))
+		} else {
+			response.Message = "File replaced successfully"
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -394,6 +463,82 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(status)
 }
 
+// statsHandler returns storage statistics
+func statsHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := context.Background()
+
+	// Count total objects and calculate total size
+	objectCh := minioClient.ListObjects(ctx, bucketName, minio.ListObjectsOptions{
+		Recursive: true,
+	})
+
+	var totalObjects int64
+	var totalSize int64
+	var largestFile string
+	var largestFileSize int64
+
+	for object := range objectCh {
+		if object.Err != nil {
+			log.Printf("Error listing object for stats: %v", object.Err)
+			continue
+		}
+		totalObjects++
+		totalSize += object.Size
+
+		if object.Size > largestFileSize {
+			largestFileSize = object.Size
+			largestFile = object.Key
+		}
+	}
+
+	var diskInfo map[string]interface{}
+
+	estimatedDiskUsage := int64(float64(totalSize) * 1.1) // Add 10% overhead for metadata
+
+	// Format sizes for display
+	formatBytes := func(bytes int64) string {
+		const unit = 1024
+		if bytes < unit {
+			return fmt.Sprintf("%d B", bytes)
+		}
+		div, exp := int64(unit), 0
+		for n := bytes / unit; n >= unit; n /= unit {
+			div *= unit
+			exp++
+		}
+		return fmt.Sprintf("%.2f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+	}
+
+	stats := map[string]interface{}{
+		"storage": map[string]interface{}{
+			"totalObjects":       totalObjects,
+			"totalSize":          totalSize,
+			"totalSizeFormatted": formatBytes(totalSize),
+			"estimatedDiskUsage": formatBytes(estimatedDiskUsage),
+			"averageFileSize": formatBytes(func() int64 {
+				if totalObjects > 0 {
+					return totalSize / totalObjects
+				}
+				return 0
+			}()),
+		},
+		"largestFile": map[string]interface{}{
+			"name": largestFile,
+			"size": formatBytes(largestFileSize),
+		},
+		"bucket":    bucketName,
+		"timestamp": time.Now().Format(time.RFC3339),
+	}
+
+	// Add disk info if available
+	if diskInfo != nil {
+		stats["disk"] = diskInfo
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
+}
+
 func main() {
 	// Initialize MinIO client
 	if err := initMinIO(); err != nil {
@@ -406,6 +551,7 @@ func main() {
 	http.HandleFunc("/api/download/", corsMiddleware(downloadHandler))
 	http.HandleFunc("/api/delete/", corsMiddleware(deleteHandler))
 	http.HandleFunc("/api/health", corsMiddleware(healthHandler))
+	http.HandleFunc("/api/stats", corsMiddleware(statsHandler))
 
 	// Get port from environment or use default
 	port := os.Getenv("SERVER_PORT")

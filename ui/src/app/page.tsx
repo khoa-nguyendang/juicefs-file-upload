@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import FileBrowser from '@/components/FileBrowser';
 import FileUpload from '@/components/FileUpload';
 import TreeView from '@/components/TreeView';
+import StorageStats from '@/components/StorageStats';
 import { config, buildApiUrl } from '@/lib/config';
 import { Squares2X2Icon, ListBulletIcon } from '@heroicons/react/24/outline';
 
@@ -110,6 +111,9 @@ export default function Home() {
             </div>
           </div>
         </header>
+
+        {/* Storage Statistics */}
+        <StorageStats />
 
         {/* Upload Section - Always visible if enabled */}
         {config.app.enableUpload && (
